@@ -5,9 +5,9 @@ from fastapi.responses import Response
 import requests
 import io
 import os
+import concurrent.futures
 from typing import Optional, List
 
-# Librerías avanzadas de diseño en Python
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -21,6 +21,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+def health_check():
+    return {"status": "¡Google Cloud Run Turbo está activo!"}
 
 class VisitaPayload(BaseModel):
     nombre_socio: str
@@ -40,6 +44,20 @@ class VisitaPayload(BaseModel):
     firma_url: Optional[str] = None
     evidencia_urls: List[str] = []
 
+class PaqueteriaPayload(BaseModel):
+    chofer: str
+    fecha: str
+    geles: int
+    hieleras: int
+    hieloSeco: str
+    sobres: int
+    bolsas: int
+    paqueteria: str
+    numGuia: str
+    peso: str
+    costo: str
+    urls_evidencia: List[str] = []
+
 def obtener_imagen_platypus(url, max_width, max_height):
     if not url: return None
     try:
@@ -47,7 +65,6 @@ def obtener_imagen_platypus(url, max_width, max_height):
         if res.status_code == 200:
             img_data = io.BytesIO(res.content)
             img = RLImage(img_data)
-            # Calcular aspecto para que no se deforme
             aspect = img.imageWidth / float(img.imageHeight)
             if img.imageWidth > max_width:
                 img.drawWidth = max_width
@@ -63,7 +80,6 @@ def obtener_imagen_platypus(url, max_width, max_height):
 @app.post("/api/generar-comprobante")
 def generar_comprobante(datos: VisitaPayload):
     buffer = io.BytesIO()
-    # Configuramos los márgenes de la hoja
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     elementos = []
     estilos = getSampleStyleSheet()
@@ -73,22 +89,16 @@ def generar_comprobante(datos: VisitaPayload):
     estilo_normal = estilos['Normal']
     estilo_gps = ParagraphStyle('GPS', parent=estilos['Normal'], textColor=colors.HexColor("#1565C0"), fontName="Helvetica-Bold")
 
-    # --- 1. ENCABEZADO (Logo y Título) ---
-    logo_path = "logo.png" # El archivo que subiste a GitHub
+    logo_path = "logo.png"
     logo_img = RLImage(logo_path, width=80, height=80) if os.path.exists(logo_path) else Paragraph("<b>LITOS LOGÍSTICA</b>", estilo_titulo)
     
-    tabla_encabezado = Table([
-        [logo_img, Paragraph("<b>COMPROBANTE DE RECOLECCIÓN</b>", estilo_titulo)]
-    ], colWidths=[100, 350])
+    tabla_encabezado = Table([[logo_img, Paragraph("<b>COMPROBANTE DE RECOLECCIÓN</b>", estilo_titulo)]], colWidths=[100, 350])
     tabla_encabezado.setStyle(TableStyle([('ALIGN', (1,0), (1,0), 'RIGHT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-    
     elementos.append(tabla_encabezado)
     elementos.append(Spacer(1, 10))
-    # Línea divisoria
     elementos.append(Table([['']], colWidths=[530], style=[('LINEABOVE', (0,0), (-1,-1), 2, colors.HexColor("#0149ad"))]))
     elementos.append(Spacer(1, 10))
 
-    # --- 2. DETALLES DE OPERACIÓN ---
     elementos.append(Paragraph("Detalles de Operación", estilo_subtitulo))
     elementos.append(Spacer(1, 5))
     elementos.append(Paragraph(f"<b>Clínica:</b> {datos.nombre_socio}", estilo_normal))
@@ -100,19 +110,11 @@ def generar_comprobante(datos: VisitaPayload):
     elementos.append(Paragraph(f"Validación GPS (Llegada): {datos.gps}", estilo_gps))
     elementos.append(Spacer(1, 15))
 
-    # --- 3. TABLA DE TIEMPOS ---
-    tabla_tiempos = Table([
-        [f"Llegada: {datos.llegada}", f"Entrega: {datos.salida}", f"Salida: {datos.salida}"]
-    ], colWidths=[176, 176, 176])
-    tabla_tiempos.setStyle(TableStyle([
-        ('BOX', (0,0), (-1,-1), 1, colors.grey),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTSIZE', (0,0), (-1,-1), 9)
-    ]))
+    tabla_tiempos = Table([[f"Llegada: {datos.llegada}", f"Entrega: {datos.salida}", f"Salida: {datos.salida}"]], colWidths=[176, 176, 176])
+    tabla_tiempos.setStyle(TableStyle([('BOX', (0,0), (-1,-1), 1, colors.grey), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
     elementos.append(tabla_tiempos)
     elementos.append(Spacer(1, 20))
 
-    # --- 4. TABLA DE MUESTRAS ---
     elementos.append(Paragraph("Resumen de Muestras", estilo_subtitulo))
     elementos.append(Spacer(1, 10))
     tabla_muestras = Table([
@@ -133,7 +135,6 @@ def generar_comprobante(datos: VisitaPayload):
     elementos.append(Paragraph(f"<b>Observaciones:</b> {datos.observaciones}", estilo_normal))
     elementos.append(Spacer(1, 30))
 
-    # --- 5. FIRMA ---
     elementos.append(Table([['']], colWidths=[530], style=[('LINEABOVE', (0,0), (-1,-1), 1, colors.grey)]))
     elementos.append(Spacer(1, 10))
     
@@ -146,57 +147,32 @@ def generar_comprobante(datos: VisitaPayload):
     else:
         elementos.append(Spacer(1, 50))
     
-    tabla_linea_firma = Table([
-        ["___________________________________"],
-        ["Firma del Químico / Responsable"]
-    ], colWidths=[530])
-    tabla_linea_firma.setStyle(TableStyle([
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('FONTNAME', (0,1), (0,1), 'Helvetica-Bold')
-    ]))
+    tabla_linea_firma = Table([["___________________________________"], ["Firma del Químico / Responsable"]], colWidths=[530])
+    tabla_linea_firma.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTNAME', (0,1), (0,1), 'Helvetica-Bold')]))
     elementos.append(tabla_linea_firma)
     
-    # --- 6. ANEXOS FOTOGRÁFICOS (1 por hoja) ---
+    # 🔥 MAGIA TURBO: DESCARGAS PARALELAS CON 2GB RAM 🔥
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        imagenes_listas = list(executor.map(lambda u: obtener_imagen_platypus(u, 450, 550), datos.evidencia_urls))
+
     total_fotos = len(datos.evidencia_urls)
-    for i, url in enumerate(datos.evidencia_urls):
-        img = obtener_imagen_platypus(url, max_width=450, max_height=550)
+    for i, img in enumerate(imagenes_listas):
         if img:
-            elementos.append(PageBreak()) # Saltamos a una hoja nueva
+            elementos.append(PageBreak())
             elementos.append(Paragraph("Anexo Fotográfico", estilo_titulo))
             elementos.append(Paragraph(f"Clínica: {datos.num_socio} | Foto {i+1} de {total_fotos}", estilo_normal))
             elementos.append(Spacer(1, 5))
             elementos.append(Table([['']], colWidths=[530], style=[('LINEABOVE', (0,0), (-1,-1), 1, colors.grey)]))
             elementos.append(Spacer(1, 20))
-            
-            # Centrar la foto
             tabla_foto = Table([[img]], colWidths=[530])
             tabla_foto.setStyle(TableStyle([('ALIGN', (0,0), (0,0), 'CENTER')]))
             elementos.append(tabla_foto)
-            del img # Protegemos la RAM
 
-    # Construir el documento
     doc.build(elementos)
     pdf_bytes = buffer.getvalue()
     buffer.close()
 
     return Response(content=pdf_bytes, media_type="application/pdf")
-# =========================================================================
-# NUEVA RUTA: GENERAR PDF DE PAQUETERÍA E INSUMOS
-# =========================================================================
-
-class PaqueteriaPayload(BaseModel):
-    chofer: str
-    fecha: str
-    geles: int
-    hieleras: int
-    hieloSeco: str
-    sobres: int
-    bolsas: int
-    paqueteria: str
-    numGuia: str
-    peso: str
-    costo: str
-    urls_evidencia: List[str] = []
 
 @app.post("/api/generar-paqueteria")
 def generar_paqueteria(datos: PaqueteriaPayload):
@@ -209,28 +185,22 @@ def generar_paqueteria(datos: PaqueteriaPayload):
     estilo_subtitulo = ParagraphStyle('Sub', parent=estilos['Heading3'], textColor=colors.black)
     estilo_normal = estilos['Normal']
 
-    # --- 1. ENCABEZADO ---
     logo_path = "logo.png"
     logo_img = RLImage(logo_path, width=80, height=80) if os.path.exists(logo_path) else Paragraph("<b>LITOS</b>", estilo_titulo)
     
-    tabla_encabezado = Table([
-        [logo_img, Paragraph("<b>REPORTE DE ENVÍO LOGÍSTICO</b>", estilo_titulo)]
-    ], colWidths=[100, 350])
+    tabla_encabezado = Table([[logo_img, Paragraph("<b>REPORTE DE ENVÍO LOGÍSTICO</b>", estilo_titulo)]], colWidths=[100, 350])
     tabla_encabezado.setStyle(TableStyle([('ALIGN', (1,0), (1,0), 'RIGHT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-    
     elementos.append(tabla_encabezado)
     elementos.append(Spacer(1, 10))
     elementos.append(Table([['']], colWidths=[530], style=[('LINEABOVE', (0,0), (-1,-1), 2, colors.HexColor("#0149ad"))]))
     elementos.append(Spacer(1, 20))
 
-    # --- 2. INFORMACIÓN DE RUTA ---
     elementos.append(Paragraph("Información de la Ruta", estilo_subtitulo))
     elementos.append(Spacer(1, 5))
     elementos.append(Paragraph(f"<b>Colaborador:</b> {datos.chofer}", estilo_normal))
     elementos.append(Paragraph(f"<b>Fecha de Operación:</b> {datos.fecha}", estilo_normal))
     elementos.append(Spacer(1, 20))
 
-    # --- 3. TABLA DE INSUMOS ---
     elementos.append(Paragraph("Desglose de Insumos", estilo_subtitulo))
     elementos.append(Spacer(1, 10))
     tabla_insumos = Table([
@@ -250,7 +220,6 @@ def generar_paqueteria(datos: PaqueteriaPayload):
     elementos.append(tabla_insumos)
     elementos.append(Spacer(1, 25))
 
-    # --- 4. DETALLES DE PAQUETERÍA (Solo si es foráneo) ---
     if datos.paqueteria.lower() != 'local':
         elementos.append(Paragraph("Detalles de Paquetería", estilo_subtitulo))
         elementos.append(Spacer(1, 5))
@@ -259,10 +228,12 @@ def generar_paqueteria(datos: PaqueteriaPayload):
         elementos.append(Paragraph(f"<b>Peso Registrado:</b> {datos.peso} Kg", estilo_normal))
         elementos.append(Paragraph(f"<b>Costo:</b> ${datos.costo}", estilo_normal))
     
-    # --- 5. ANEXOS FOTOGRÁFICOS ---
+    # 🔥 MAGIA TURBO: DESCARGAS PARALELAS 🔥
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        imagenes_listas = list(executor.map(lambda u: obtener_imagen_platypus(u, 450, 550), datos.urls_evidencia))
+
     total_fotos = len(datos.urls_evidencia)
-    for i, url in enumerate(datos.urls_evidencia):
-        img = obtener_imagen_platypus(url, max_width=450, max_height=550)
+    for i, img in enumerate(imagenes_listas):
         if img:
             elementos.append(PageBreak())
             elementos.append(Paragraph("Anexo Fotográfico Logístico", estilo_titulo))
@@ -274,7 +245,6 @@ def generar_paqueteria(datos: PaqueteriaPayload):
             tabla_foto = Table([[img]], colWidths=[530])
             tabla_foto.setStyle(TableStyle([('ALIGN', (0,0), (0,0), 'CENTER')]))
             elementos.append(tabla_foto)
-            del img # Liberamos RAM
 
     doc.build(elementos)
     pdf_bytes = buffer.getvalue()
