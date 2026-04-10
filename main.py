@@ -180,3 +180,104 @@ def generar_comprobante(datos: VisitaPayload):
     buffer.close()
 
     return Response(content=pdf_bytes, media_type="application/pdf")
+# =========================================================================
+# NUEVA RUTA: GENERAR PDF DE PAQUETERÍA E INSUMOS
+# =========================================================================
+
+class PaqueteriaPayload(BaseModel):
+    chofer: str
+    fecha: str
+    geles: int
+    hieleras: int
+    hieloSeco: str
+    sobres: int
+    bolsas: int
+    paqueteria: str
+    numGuia: str
+    peso: str
+    costo: str
+    urls_evidencia: List[str] = []
+
+@app.post("/api/generar-paqueteria")
+def generar_paqueteria(datos: PaqueteriaPayload):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    elementos = []
+    estilos = getSampleStyleSheet()
+    
+    estilo_titulo = ParagraphStyle('Titulo', parent=estilos['Heading2'], textColor=colors.HexColor("#0149ad"))
+    estilo_subtitulo = ParagraphStyle('Sub', parent=estilos['Heading3'], textColor=colors.black)
+    estilo_normal = estilos['Normal']
+
+    # --- 1. ENCABEZADO ---
+    logo_path = "logo.png"
+    logo_img = RLImage(logo_path, width=80, height=80) if os.path.exists(logo_path) else Paragraph("<b>LITOS</b>", estilo_titulo)
+    
+    tabla_encabezado = Table([
+        [logo_img, Paragraph("<b>REPORTE DE ENVÍO LOGÍSTICO</b>", estilo_titulo)]
+    ], colWidths=[100, 350])
+    tabla_encabezado.setStyle(TableStyle([('ALIGN', (1,0), (1,0), 'RIGHT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    
+    elementos.append(tabla_encabezado)
+    elementos.append(Spacer(1, 10))
+    elementos.append(Table([['']], colWidths=[530], style=[('LINEABOVE', (0,0), (-1,-1), 2, colors.HexColor("#0149ad"))]))
+    elementos.append(Spacer(1, 20))
+
+    # --- 2. INFORMACIÓN DE RUTA ---
+    elementos.append(Paragraph("Información de la Ruta", estilo_subtitulo))
+    elementos.append(Spacer(1, 5))
+    elementos.append(Paragraph(f"<b>Colaborador:</b> {datos.chofer}", estilo_normal))
+    elementos.append(Paragraph(f"<b>Fecha de Operación:</b> {datos.fecha}", estilo_normal))
+    elementos.append(Spacer(1, 20))
+
+    # --- 3. TABLA DE INSUMOS ---
+    elementos.append(Paragraph("Desglose de Insumos", estilo_subtitulo))
+    elementos.append(Spacer(1, 10))
+    tabla_insumos = Table([
+        ['Geles', 'Hieleras', 'Hielo Seco', 'Sobres', 'Bolsas'],
+        [str(datos.geles), str(datos.hieleras), f"{datos.hieloSeco} Kg", str(datos.sobres), str(datos.bolsas)]
+    ], colWidths=[100, 100, 100, 100, 100])
+    
+    tabla_insumos.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#607D8B")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#f5f5f5")),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+    ]))
+    elementos.append(tabla_insumos)
+    elementos.append(Spacer(1, 25))
+
+    # --- 4. DETALLES DE PAQUETERÍA (Solo si es foráneo) ---
+    if datos.paqueteria.lower() != 'local':
+        elementos.append(Paragraph("Detalles de Paquetería", estilo_subtitulo))
+        elementos.append(Spacer(1, 5))
+        elementos.append(Paragraph(f"<b>Empresa Transportista:</b> {datos.paqueteria}", estilo_normal))
+        elementos.append(Paragraph(f"<b>No. Guía:</b> {datos.numGuia}", estilo_normal))
+        elementos.append(Paragraph(f"<b>Peso Registrado:</b> {datos.peso} Kg", estilo_normal))
+        elementos.append(Paragraph(f"<b>Costo:</b> ${datos.costo}", estilo_normal))
+    
+    # --- 5. ANEXOS FOTOGRÁFICOS ---
+    total_fotos = len(datos.urls_evidencia)
+    for i, url in enumerate(datos.urls_evidencia):
+        img = obtener_imagen_platypus(url, max_width=450, max_height=550)
+        if img:
+            elementos.append(PageBreak())
+            elementos.append(Paragraph("Anexo Fotográfico Logístico", estilo_titulo))
+            elementos.append(Paragraph(f"Foto {i+1} de {total_fotos}", estilo_normal))
+            elementos.append(Spacer(1, 5))
+            elementos.append(Table([['']], colWidths=[530], style=[('LINEABOVE', (0,0), (-1,-1), 1, colors.grey)]))
+            elementos.append(Spacer(1, 20))
+            
+            tabla_foto = Table([[img]], colWidths=[530])
+            tabla_foto.setStyle(TableStyle([('ALIGN', (0,0), (0,0), 'CENTER')]))
+            elementos.append(tabla_foto)
+            del img # Liberamos RAM
+
+    doc.build(elementos)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+
+    return Response(content=pdf_bytes, media_type="application/pdf")
