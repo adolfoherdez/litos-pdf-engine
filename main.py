@@ -17,10 +17,16 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],  # Permite cualquier origen (Netlify, localhost, etc.)
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite POST, GET, OPTIONS, etc.
+    allow_headers=["*"],  # Permite cualquier encabezado (Content-Type, etc.)
+    expose_headers=["*"], # 🔥 IMPORTANTE: Permite que el navegador vea los metadatos del PDF
 )
+
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return Response(status_code=200)
 
 @app.get("/")
 def health_check():
