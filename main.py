@@ -8,10 +8,10 @@ from reportlab.lib.utils import ImageReader
 import requests
 import io
 import concurrent.futures
+from typing import Optional, List # 🔥 AGREGADO PARA COMPATIBILIDAD 🔥
 
 app = FastAPI()
 
-# Permitir que tu web en Flutter se comunique con este Python
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,7 +19,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# El "molde" de los datos que Flutter nos va a mandar
+# 🔥 NUEVO: UNA RUTA DE PRUEBA PARA SABER SI ESTÁ VIVO 🔥
+@app.get("/")
+def health_check():
+    return {"status": "¡El motor de Litos está vivo y listo!"}
+
 class VisitaPayload(BaseModel):
     nombre_socio: str
     num_socio: str
@@ -35,8 +39,8 @@ class VisitaPayload(BaseModel):
     con: int
     total: int
     observaciones: str
-    firma_url: str | None = None
-    evidencia_urls: list[str] = []
+    firma_url: Optional[str] = None # 🔥 CORREGIDO PARA EVITAR ERRORES EN RENDER 🔥
+    evidencia_urls: List[str] = []  # 🔥 CORREGIDO 🔥
 
 def descargar_imagen(url):
     if not url: return None
@@ -54,7 +58,6 @@ def generar_comprobante(datos: VisitaPayload):
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
-    # --- HOJA 1: DATOS Y FIRMA ---
     c.setFont("Helvetica-Bold", 16)
     c.drawString(40, height - 50, "COMPROBANTE DE RECOLECCIÓN P.O.D.")
     
@@ -79,21 +82,17 @@ def generar_comprobante(datos: VisitaPayload):
     
     c.drawString(40, height - 420, "___________________________________")
     c.drawString(40, height - 440, "Firma del Químico / Responsable")
-    c.showPage() # Fin de la hoja 1
+    c.showPage() 
 
-    # --- MAGIA: DESCARGAMOS TODAS LAS FOTOS EN MILISEGUNDOS ---
     with concurrent.futures.ThreadPoolExecutor() as executor:
         imagenes_descargadas = list(executor.map(descargar_imagen, datos.evidencia_urls))
 
-    # --- HOJAS EXTRAS: 1 FOTO POR PÁGINA ---
     for i, img in enumerate(imagenes_descargadas):
         if img:
             c.setFont("Helvetica-Bold", 16)
             c.drawString(40, height - 50, "Anexo Fotográfico")
             c.setFont("Helvetica", 10)
             c.drawString(40, height - 70, f"Foto {i + 1} de {len(imagenes_descargadas)}")
-            
-            # Dibujamos la foto gigante en el centro
             c.drawImage(img, 40, 50, width=width-80, height=height-150, preserveAspectRatio=True)
             c.showPage()
 
@@ -101,5 +100,4 @@ def generar_comprobante(datos: VisitaPayload):
     pdf_bytes = buffer.getvalue()
     buffer.close()
 
-    # Devolvemos el PDF listo
     return Response(content=pdf_bytes, media_type="application/pdf")
