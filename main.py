@@ -7,8 +7,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 import requests
 import io
-import concurrent.futures
-from typing import Optional, List # 🔥 AGREGADO PARA COMPATIBILIDAD 🔥
+from typing import Optional, List
 
 app = FastAPI()
 
@@ -19,10 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔥 NUEVO: UNA RUTA DE PRUEBA PARA SABER SI ESTÁ VIVO 🔥
 @app.get("/")
 def health_check():
-    return {"status": "¡El motor de Litos está vivo y listo!"}
+    return {"status": "¡El motor de Litos está vivo y cuidando la RAM!"}
 
 class VisitaPayload(BaseModel):
     nombre_socio: str
@@ -39,12 +37,13 @@ class VisitaPayload(BaseModel):
     con: int
     total: int
     observaciones: str
-    firma_url: Optional[str] = None # 🔥 CORREGIDO PARA EVITAR ERRORES EN RENDER 🔥
-    evidencia_urls: List[str] = []  # 🔥 CORREGIDO 🔥
+    firma_url: Optional[str] = None
+    evidencia_urls: List[str] = []
 
 def descargar_imagen(url):
     if not url: return None
     try:
+        # Descarga rápida con timeout para evitar que se quede colgado
         res = requests.get(url, timeout=5)
         if res.status_code == 200:
             return ImageReader(io.BytesIO(res.content))
@@ -58,6 +57,7 @@ def generar_comprobante(datos: VisitaPayload):
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
+    # --- HOJA 1: DATOS Y FIRMA ---
     c.setFont("Helvetica-Bold", 16)
     c.drawString(40, height - 50, "COMPROBANTE DE RECOLECCIÓN P.O.D.")
     
@@ -79,22 +79,29 @@ def generar_comprobante(datos: VisitaPayload):
         firma_img = descargar_imagen(datos.firma_url)
         if firma_img:
             c.drawImage(firma_img, 40, height - 400, width=150, height=80, preserveAspectRatio=True)
+            del firma_img # 🔥 Liberamos memoria de la firma
     
     c.drawString(40, height - 420, "___________________________________")
     c.drawString(40, height - 440, "Firma del Químico / Responsable")
     c.showPage() 
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        imagenes_descargadas = list(executor.map(descargar_imagen, datos.evidencia_urls))
-
-    for i, img in enumerate(imagenes_descargadas):
+    # --- HOJAS EXTRAS: 1 FOTO A LA VEZ (Estrategia Anti-RAM) ---
+    total_fotos = len(datos.evidencia_urls)
+    
+    for i, url in enumerate(datos.evidencia_urls):
+        img = descargar_imagen(url)
         if img:
             c.setFont("Helvetica-Bold", 16)
             c.drawString(40, height - 50, "Anexo Fotográfico")
             c.setFont("Helvetica", 10)
-            c.drawString(40, height - 70, f"Foto {i + 1} de {len(imagenes_descargadas)}")
+            c.drawString(40, height - 70, f"Foto {i + 1} de {total_fotos}")
+            
+            # Dibujamos la foto gigante en el centro
             c.drawImage(img, 40, 50, width=width-80, height=height-150, preserveAspectRatio=True)
             c.showPage()
+            
+            # 🔥 LA MAGIA: Destruimos la imagen de la RAM antes de ir por la siguiente 🔥
+            del img
 
     c.save()
     pdf_bytes = buffer.getvalue()
