@@ -178,7 +178,14 @@ def generar_comprobante(datos: VisitaPayload):
     pdf_bytes = buffer.getvalue()
     buffer.close()
 
-    return Response(content=pdf_bytes, media_type="application/pdf")
+    return Response(
+        content=pdf_bytes, 
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "attachment; filename=comprobante.pdf",
+            "Access-Control-Allow-Origin": "*" # 🔥 Refuerzo manual de CORS
+        }
+    )
 
 @app.post("/api/generar-paqueteria")
 def generar_paqueteria(datos: PaqueteriaPayload):
