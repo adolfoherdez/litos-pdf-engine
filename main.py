@@ -120,7 +120,7 @@ def generar_comprobante(datos: VisitaPayload):
         [str(datos.amb), str(datos.ref), str(datos.con), str(datos.total)]
     ], colWidths=[100, 100, 100, 100])
     tabla_muestras.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.bluegrey),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#607D8B")),
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
