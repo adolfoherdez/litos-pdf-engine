@@ -3,3 +3,4 @@ uvicorn
 reportlab
 requests
 pydantic
+Pillow
