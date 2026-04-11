@@ -101,11 +101,11 @@ def obtener_imagen_platypus(url, max_width, max_height):
                 
             # 🔥 MAGIA 3: Redimensionamos la imagen para que no sea absurdamente gigante
             # (800x800 es resolución más que suficiente para un reporte en PDF)
-            img_pil.thumbnail((800, 800), PILImage.Resampling.LANCZOS)
+            img_pil.thumbnail((1920, 1920), PILImage.Resampling.LANCZOS)
             
             # 🔥 MAGIA 4: La guardamos comprimida al 60% de calidad en la memoria RAM
             img_comprimida = io.BytesIO()
-            img_pil.save(img_comprimida, format="JPEG", quality=90)
+            img_pil.save(img_comprimida, format="JPEG", quality=75)
             img_comprimida.seek(0)
             
             # Ahora sí, se la pasamos a ReportLab (ya comprimida y ligerita)
