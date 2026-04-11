@@ -55,6 +55,7 @@ def health_check():
 
 class VisitaPayload(BaseModel):
     nombre_socio: str
+    laboratorio: str
     num_socio: str
     ciudad: str
     estado: str
@@ -151,6 +152,7 @@ def generar_comprobante(datos: VisitaPayload):
     elementos.append(Paragraph("Detalles de Operación", estilo_subtitulo))
     elementos.append(Spacer(1, 5))
     elementos.append(Paragraph(f"<b>Clínica:</b> {datos.nombre_socio}", estilo_normal))
+    elementos.append(Paragraph(f"<b>Laboratorio:</b> {datos.laboratorio}", estilo_normal))
     elementos.append(Paragraph(f"<b>No. de Socio:</b> {datos.num_socio}", estilo_normal))
     elementos.append(Paragraph(f"<b>Ubicación:</b> {datos.ciudad}, {datos.estado}", estilo_normal))
     elementos.append(Paragraph(f"<b>Recolector:</b> {datos.chofer}", estilo_normal))
@@ -209,7 +211,7 @@ def generar_comprobante(datos: VisitaPayload):
         if img:
             elementos.append(PageBreak())
             elementos.append(Paragraph("Anexo Fotográfico", estilo_titulo))
-            elementos.append(Paragraph(f"Clínica: {datos.num_socio} | Foto {i+1} de {total_fotos}", estilo_normal))
+            elementos.append(Paragraph(f"Clínica: {datos.num_socio} - Laboratorio: {datos.laboratorio}| Foto {i+1} de {total_fotos}", estilo_normal))
             elementos.append(Spacer(1, 5))
             elementos.append(Table([['']], colWidths=[530], style=[('LINEABOVE', (0,0), (-1,-1), 1, colors.grey)]))
             elementos.append(Spacer(1, 20))
