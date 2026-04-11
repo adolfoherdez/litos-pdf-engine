@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import Response
@@ -13,16 +13,37 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 
+
+LLAVE_SECRETA_LITOS = os.environ.get("API_KEY_LITOS")
+
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite cualquier origen (Netlify, localhost, etc.)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Permite POST, GET, OPTIONS, etc.
-    allow_headers=["*"],  # Permite cualquier encabezado (Content-Type, etc.)
-    expose_headers=["*"], # 🔥 IMPORTANTE: Permite que el navegador vea los metadatos del PDF
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+@app.middleware("http")
+async def verificar_api_key(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path == "/":
+        return await call_next(request)
+        
+    if request.url.path.startswith("/api/"):
+        llave_recibida = request.headers.get("X-API-KEY")
+        
+        if llave_recibida != LLAVE_SECRETA_LITOS:
+            return Response(
+                content='{"error": "Acceso denegado: API Key inválida o ausente. ¡Intento de ataque bloqueado!"}', 
+                status_code=401, 
+                media_type="application/json"
+            )
+            
+    response = await call_next(request)
+    return response
 
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(rest_of_path: str):
@@ -30,7 +51,7 @@ async def preflight_handler(rest_of_path: str):
 
 @app.get("/")
 def health_check():
-    return {"status": "¡Google Cloud Run Turbo está activo!"}
+    return {"status": "¡Google Cloud Run Turbo está activo y BLINDADO!"}
 
 class VisitaPayload(BaseModel):
     nombre_socio: str
@@ -241,7 +262,6 @@ def generar_paqueteria(datos: PaqueteriaPayload):
         elementos.append(Paragraph(f"<b>Peso Registrado:</b> {datos.peso} Kg", estilo_normal))
         elementos.append(Paragraph(f"<b>Costo:</b> ${datos.costo}", estilo_normal))
     
-    # 🔥 MAGIA TURBO: DESCARGAS PARALELAS 🔥
     with concurrent.futures.ThreadPoolExecutor() as executor:
         imagenes_listas = list(executor.map(lambda u: obtener_imagen_platypus(u, 450, 550), datos.urls_evidencia))
 
