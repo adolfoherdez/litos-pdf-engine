@@ -105,7 +105,7 @@ def obtener_imagen_platypus(url, max_width, max_height):
             
             # 🔥 MAGIA 4: La guardamos comprimida al 60% de calidad en la memoria RAM
             img_comprimida = io.BytesIO()
-            img_pil.save(img_comprimida, format="JPEG", quality=60)
+            img_pil.save(img_comprimida, format="JPEG", quality=90)
             img_comprimida.seek(0)
             
             # Ahora sí, se la pasamos a ReportLab (ya comprimida y ligerita)
