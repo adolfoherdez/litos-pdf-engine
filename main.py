@@ -7,7 +7,7 @@ import io
 import os
 import concurrent.futures
 from typing import Optional, List
-
+from PIL import Image as PILImage
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -88,10 +88,30 @@ class PaqueteriaPayload(BaseModel):
 def obtener_imagen_platypus(url, max_width, max_height):
     if not url: return None
     try:
-        res = requests.get(url, timeout=5)
+        # Descargamos la imagen original
+        res = requests.get(url, timeout=10)
         if res.status_code == 200:
-            img_data = io.BytesIO(res.content)
-            img = RLImage(img_data)
+            
+            # 🔥 MAGIA 1: Abrimos la imagen con Pillow
+            img_pil = PILImage.open(io.BytesIO(res.content))
+            
+            # 🔥 MAGIA 2: Si tiene transparencia (PNG) la pasamos a RGB normal (JPEG)
+            if img_pil.mode in ("RGBA", "P"):
+                img_pil = img_pil.convert("RGB")
+                
+            # 🔥 MAGIA 3: Redimensionamos la imagen para que no sea absurdamente gigante
+            # (800x800 es resolución más que suficiente para un reporte en PDF)
+            img_pil.thumbnail((800, 800), PILImage.Resampling.LANCZOS)
+            
+            # 🔥 MAGIA 4: La guardamos comprimida al 60% de calidad en la memoria RAM
+            img_comprimida = io.BytesIO()
+            img_pil.save(img_comprimida, format="JPEG", quality=60)
+            img_comprimida.seek(0)
+            
+            # Ahora sí, se la pasamos a ReportLab (ya comprimida y ligerita)
+            img = RLImage(img_comprimida)
+            
+            # Ajustamos proporciones para la hoja del PDF
             aspect = img.imageWidth / float(img.imageHeight)
             if img.imageWidth > max_width:
                 img.drawWidth = max_width
@@ -99,8 +119,10 @@ def obtener_imagen_platypus(url, max_width, max_height):
             if img.drawHeight > max_height:
                 img.drawHeight = max_height
                 img.drawWidth = max_height * aspect
+                
             return img
-    except:
+    except Exception as e:
+        print(f"Error procesando imagen: {e}")
         pass
     return None
 
