@@ -12,6 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RL
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
+import gc
 
 
 LLAVE_SECRETA_LITOS = os.environ.get("API_KEY_LITOS")
@@ -125,6 +126,18 @@ def obtener_imagen_platypus(url, max_width, max_height):
         print(f"💥 Error procesando imagen: {type(e).__name__}: {e}")
     return None
 
+def procesar_imagenes_en_lotes(urls, max_width, max_height, tamanio_lote=5):
+    resultados = []
+    for i in range(0, len(urls), tamanio_lote):
+        lote = urls[i:i + tamanio_lote]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            imagenes_lote = list(
+                executor.map(lambda u: obtener_imagen_platypus(u, max_width, max_height), lote)
+            )
+        resultados.extend(imagenes_lote)
+        gc.collect()
+    return resultados
+
 @app.post("/api/generar-comprobante")
 def generar_comprobante(datos: VisitaPayload):
     buffer = io.BytesIO()
@@ -201,8 +214,8 @@ def generar_comprobante(datos: VisitaPayload):
     elementos.append(tabla_linea_firma)
     
     # 🔥 MAGIA TURBO: DESCARGAS PARALELAS CON 2GB RAM 🔥
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        imagenes_listas = list(executor.map(lambda u: obtener_imagen_platypus(u, 450, 550), datos.evidencia_urls))
+    imagenes_listas = procesar_imagenes_en_lotes(datos.evidencia_urls, 450, 550, tamanio_lote=5)
+
 
     total_fotos = len(datos.evidencia_urls)
     for i, img in enumerate(imagenes_listas):
@@ -284,8 +297,8 @@ def generar_paqueteria(datos: PaqueteriaPayload):
         elementos.append(Paragraph(f"<b>Peso Registrado:</b> {datos.peso} Kg", estilo_normal))
         elementos.append(Paragraph(f"<b>Costo:</b> ${datos.costo}", estilo_normal))
     
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        imagenes_listas = list(executor.map(lambda u: obtener_imagen_platypus(u, 450, 550), datos.urls_evidencia))
+    imagenes_listas = procesar_imagenes_en_lotes(datos.urls_evidencia, 450, 550, tamanio_lote=5)
+
 
     total_fotos = len(datos.urls_evidencia)
     for i, img in enumerate(imagenes_listas):
