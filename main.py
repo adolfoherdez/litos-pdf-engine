@@ -89,30 +89,26 @@ class PaqueteriaPayload(BaseModel):
 def obtener_imagen_platypus(url, max_width, max_height):
     if not url: return None
     try:
-        res = requests.get(url, timeout=10)
+        print(f"⬇️ Descargando: {url[:80]}...")  # ✅ Ver qué URL llega
+        res = requests.get(url, timeout=15)
+        print(f"📡 Status: {res.status_code} | Tamaño: {len(res.content)} bytes | Tipo: {res.headers.get('content-type', 'desconocido')}")
+        
         if res.status_code == 200:
             img_pil = PILImage.open(io.BytesIO(res.content))
+            print(f"🖼️ Imagen abierta: {img_pil.size} | Modo: {img_pil.mode}")
             
             if img_pil.mode in ("RGBA", "P"):
                 img_pil = img_pil.convert("RGB")
             
-            # ✅ Paso 1: Redimensionar
             img_pil.thumbnail((1200, 1200), PILImage.Resampling.LANCZOS)
             
-            # ✅ Paso 2: Crear el buffer ANTES de guardar
             img_comprimida = io.BytesIO()
-            
-            # ✅ Paso 3: Guardar en el buffer
             img_pil.save(img_comprimida, format="JPEG", quality=80, optimize=True)
             img_comprimida.seek(0)
-            
-            # ✅ Paso 4: Liberar Pillow
             img_pil.close()
             del img_pil
             
-            # ✅ Paso 5: Pasar a ReportLab
             img = RLImage(img_comprimida)
-            
             aspect = img.imageWidth / float(img.imageHeight)
             if img.imageWidth > max_width:
                 img.drawWidth = max_width
@@ -120,10 +116,13 @@ def obtener_imagen_platypus(url, max_width, max_height):
             if img.drawHeight > max_height:
                 img.drawHeight = max_height
                 img.drawWidth = max_height * aspect
-                
+            
+            print(f"✅ Imagen procesada correctamente")
             return img
+        else:
+            print(f"❌ HTTP error: {res.status_code}")
     except Exception as e:
-        print(f"Error procesando imagen: {e}")
+        print(f"💥 Error procesando imagen: {type(e).__name__}: {e}")
     return None
 
 @app.post("/api/generar-comprobante")
