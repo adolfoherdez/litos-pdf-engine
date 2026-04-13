@@ -89,31 +89,30 @@ class PaqueteriaPayload(BaseModel):
 def obtener_imagen_platypus(url, max_width, max_height):
     if not url: return None
     try:
-        # Descargamos la imagen original
         res = requests.get(url, timeout=10)
         if res.status_code == 200:
-            
-            # 🔥 MAGIA 1: Abrimos la imagen con Pillow
             img_pil = PILImage.open(io.BytesIO(res.content))
             
-            # 🔥 MAGIA 2: Si tiene transparencia (PNG) la pasamos a RGB normal (JPEG)
             if img_pil.mode in ("RGBA", "P"):
                 img_pil = img_pil.convert("RGB")
-                
-            # 🔥 MAGIA 3: Redimensionamos la imagen para que no sea absurdamente gigante
-            # (800x800 es resolución más que suficiente para un reporte en PDF)
-            # ✅ En obtener_imagen_platypus - Supabase ya las manda en 1200px
-img_pil.thumbnail((1200, 1200), PILImage.Resampling.LANCZOS)
-img_pil.save(img_comprimida, format="JPEG", quality=80, optimize=True)
             
-            # 🔥 MAGIA 4: La guardamos comprimida al 60% de calidad en la memoria RAM
+            # ✅ Paso 1: Redimensionar
+            img_pil.thumbnail((1200, 1200), PILImage.Resampling.LANCZOS)
+            
+            # ✅ Paso 2: Crear el buffer ANTES de guardar
             img_comprimida = io.BytesIO()
+            
+            # ✅ Paso 3: Guardar en el buffer
+            img_pil.save(img_comprimida, format="JPEG", quality=80, optimize=True)
             img_comprimida.seek(0)
             
-            # Ahora sí, se la pasamos a ReportLab (ya comprimida y ligerita)
+            # ✅ Paso 4: Liberar Pillow
+            img_pil.close()
+            del img_pil
+            
+            # ✅ Paso 5: Pasar a ReportLab
             img = RLImage(img_comprimida)
             
-            # Ajustamos proporciones para la hoja del PDF
             aspect = img.imageWidth / float(img.imageHeight)
             if img.imageWidth > max_width:
                 img.drawWidth = max_width
@@ -125,7 +124,6 @@ img_pil.save(img_comprimida, format="JPEG", quality=80, optimize=True)
             return img
     except Exception as e:
         print(f"Error procesando imagen: {e}")
-        pass
     return None
 
 @app.post("/api/generar-comprobante")
