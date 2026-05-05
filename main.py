@@ -6,6 +6,7 @@ import requests
 import io
 import os
 import concurrent.futures
+from starlette.responses import Response
 from typing import Optional, List
 from PIL import Image as PILImage
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
