@@ -341,19 +341,7 @@ class BitacoraRequest(BaseModel):
     visitas: list[VisitaBitacora]
 
 @app.post("/api/generar-bitacora")
-async def generar_bitacora(request: Request, datos: BitacoraRequest):
-    verify_api_key(request)
-
-    import io, requests as req_lib
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib import colors
-    from reportlab.lib.units import mm
-    from reportlab.platypus import (
-        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
-    )
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-
+async def generar_bitacora(datos: BitacoraRequest):  # ← quita "request: Request"
     AZUL_LANS      = colors.HexColor("#1565C0")
     AZUL_SUB       = colors.HexColor("#1E88E5")
     GRIS_FILA_PAR  = colors.HexColor("#F5F5F5")
