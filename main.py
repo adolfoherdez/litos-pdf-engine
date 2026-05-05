@@ -361,7 +361,7 @@ async def generar_bitacora(datos: BitacoraRequest):
     estilo_footer = ParagraphStyle("f", fontSize=7, textColor=colors.grey, alignment=TA_RIGHT)
 
     # ── Logo LANS ──────────────────────────────────────────────────────────
-    logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+    logo_path = os.path.join(os.path.dirname(__file__), "lanslogo.jpeg")
     logo_img  = RLImage(logo_path, width=28*mm, height=14*mm)
 
     # ── Encabezado del documento ───────────────────────────────────────────
