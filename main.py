@@ -319,3 +319,206 @@ def generar_paqueteria(datos: PaqueteriaPayload):
     buffer.close()
 
     return Response(content=pdf_bytes, media_type="application/pdf")
+# ─────────────────────────────────────────────────────────────────────────────
+# BITÁCORA FOR LOG 001/V2 — formato LANS
+# ─────────────────────────────────────────────────────────────────────────────
+class VisitaBitacora(BaseModel):
+    horario: str = "S/R"
+    clinica: str = ""
+    num_socio: str = ""
+    ambiente: int = 0
+    congelacion: int = 0
+    refrigeracion: int = 0
+    entrega_material: bool = False
+    firma_url: str = ""
+    observaciones: str = ""
+
+class BitacoraRequest(BaseModel):
+    recolector: str
+    fecha: str
+    ciudad_estado: str = ""
+    visitas: list[VisitaBitacora]
+
+@app.post("/api/generar-bitacora")
+async def generar_bitacora(request: Request, datos: BitacoraRequest):
+    verify_api_key(request)
+
+    import io, requests as req_lib
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+    AZUL_LANS      = colors.HexColor("#1565C0")
+    AZUL_SUB       = colors.HexColor("#1E88E5")
+    GRIS_FILA_PAR  = colors.HexColor("#F5F5F5")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=12*mm, bottomMargin=12*mm,
+    )
+
+    styles = getSampleStyleSheet()
+    estilo_normal = ParagraphStyle("n", fontSize=9, leading=11)
+    estilo_footer = ParagraphStyle("f", fontSize=7, textColor=colors.grey, alignment=TA_RIGHT)
+
+    # ── Logo LANS ──────────────────────────────────────────────────────────
+    logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+    logo_img  = RLImage(logo_path, width=28*mm, height=14*mm)
+
+    # ── Encabezado del documento ───────────────────────────────────────────
+    header_data = [[
+        logo_img,
+        Paragraph(f"<b>Proveedor:</b> LANS", estilo_normal),
+        Paragraph(f"<b>Fecha:</b> {datos.fecha}", estilo_normal),
+        Paragraph(f"<b>Recolector:</b> {datos.recolector}", estilo_normal),
+        Paragraph(f"<b>Ciudad/Estado:</b> {datos.ciudad_estado}", estilo_normal),
+    ]]
+    header_table = Table(header_data, colWidths=[32*mm, 55*mm, 40*mm, 80*mm, 60*mm])
+    header_table.setStyle(TableStyle([
+        ("VALIGN",      (0,0), (-1,-1), "MIDDLE"),
+        ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ("RIGHTPADDING",(0,0), (-1,-1), 4),
+    ]))
+
+    # ── Descargar firmas (en paralelo, timeout 5s) ─────────────────────────
+    def fetch_firma(url: str):
+        if not url:
+            return None
+        try:
+            r = req_lib.get(url, timeout=5)
+            return r.content if r.status_code == 200 else None
+        except Exception:
+            return None
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        firmas_bytes = list(pool.map(lambda v: fetch_firma(v.firma_url), datos.visitas))
+
+    # ── Tabla principal ────────────────────────────────────────────────────
+    # Anchos de columna (landscape A4 útil ≈ 267mm)
+    col_w = [22*mm, 46*mm, 16*mm, 14*mm, 16*mm, 20*mm, 20*mm, 18*mm, 18*mm, 28*mm, None]
+    # La última columna (Observaciones) toma el resto
+    used  = sum(w for w in col_w[:-1])
+    total_w = landscape(A4)[0] - 30*mm   # margen izq + der
+    col_w[-1] = total_w - used
+
+    s_hdr = ParagraphStyle("hdr", fontSize=6.5, textColor=colors.white,
+                           alignment=TA_CENTER, fontName="Helvetica-Bold", leading=8)
+    s_sub = ParagraphStyle("sub", fontSize=6,   textColor=colors.white,
+                           alignment=TA_CENTER, fontName="Helvetica-Bold", leading=7)
+    s_cel = ParagraphStyle("cel", fontSize=7.5, alignment=TA_CENTER, leading=9)
+    s_lft = ParagraphStyle("lft", fontSize=7.5, alignment=TA_LEFT,   leading=9)
+
+    def ph(t): return Paragraph(t, s_hdr)
+    def ps(t): return Paragraph(t, s_sub)
+    def pc(t): return Paragraph(t, s_cel)
+    def pl(t): return Paragraph(t, s_lft)
+
+    rows = []
+
+    # Fila 1 — encabezados
+    rows.append([
+        ph("Horario de\nrecolección"),
+        ph("Clínica"),
+        ph("Num.\nSocio"),
+        ph("Num.\nÓrdenes"),
+        ph("CONDICIONES DE TRANSPORTE\n(nº de muestras)"),
+        ph(""),   # congelación — vacío en fila 1
+        ph(""),   # refrigeración — vacío en fila 1
+        ph("Num.Total\nMuestras"),
+        ph("Entrega\nMaterial"),
+        ph("Firma del\nresponsable"),
+        ph("Observaciones"),
+    ])
+
+    # Fila 2 — sub-encabezados
+    rows.append([
+        ph(""), ph(""), ph(""), ph(""),
+        ps("Ambiente"),
+        ps("Congelación"),
+        ps("Refrigeración"),
+        ph(""), ph(""), ph(""), ph(""),
+    ])
+
+    # Filas de datos
+    for i, v in enumerate(datos.visitas):
+        total = v.ambiente + v.congelacion + v.refrigeracion
+
+        firma_cell = ""
+        if firmas_bytes[i]:
+            try:
+                firma_img = RLImage(io.BytesIO(firmas_bytes[i]), width=22*mm, height=11*mm)
+                firma_cell = firma_img
+            except Exception:
+                firma_cell = ""
+
+        rows.append([
+            pc(v.horario),
+            pl(v.clinica),
+            pc(v.num_socio),
+            pc("1"),
+            pc(str(v.ambiente) if v.ambiente else ""),
+            pc(str(v.congelacion) if v.congelacion else ""),
+            pc(str(v.refrigeracion) if v.refrigeracion else ""),
+            Paragraph(f"<b>{total}</b>", s_cel),
+            pc("Sí" if v.entrega_material else "No"),
+            firma_cell,
+            pl(v.observaciones),
+        ])
+
+    tabla = Table(rows, colWidths=col_w, repeatRows=2)
+
+    # Estilo base
+    ts = TableStyle([
+        ("GRID",        (0,0),  (-1,-1), 0.4, colors.grey),
+        ("VALIGN",      (0,0),  (-1,-1), "MIDDLE"),
+        ("LEFTPADDING", (0,0),  (-1,-1), 3),
+        ("RIGHTPADDING",(0,0),  (-1,-1), 3),
+        ("TOPPADDING",  (0,0),  (-1,-1), 3),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 3),
+        # Fila 1 — fondo azul
+        ("BACKGROUND",  (0,0),  (-1,0),  AZUL_LANS),
+        # Fila 1 — span "CONDICIONES DE TRANSPORTE" sobre cols 4-6
+        ("SPAN",        (4,0),  (6,0)),
+        # Fila 2 — fondo azul sub en cols 4-6, azul oscuro en el resto
+        ("BACKGROUND",  (0,1),  (3,1),   AZUL_LANS),
+        ("BACKGROUND",  (4,1),  (6,1),   AZUL_SUB),
+        ("BACKGROUND",  (7,1),  (-1,1),  AZUL_LANS),
+    ])
+
+    # Filas alternadas a partir de la fila 2 (índice 2)
+    for i in range(len(datos.visitas)):
+        if i % 2 != 0:
+            ts.add("BACKGROUND", (0, i+2), (-1, i+2), GRIS_FILA_PAR)
+
+    tabla.setStyle(ts)
+
+    # ── Footer con código de formato ──────────────────────────────────────
+    def footer_cb(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.grey)
+        canvas.drawRightString(
+            landscape(A4)[0] - 15*mm,
+            8*mm,
+            "FOR LOG 001/V2"
+        )
+        canvas.restoreState()
+
+    story = [header_table, Spacer(1, 6*mm), tabla]
+    doc.build(story, onFirstPage=footer_cb, onLaterPages=footer_cb)
+
+    buffer.seek(0)
+    return Response(
+        content=buffer.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="bitacora_lans.pdf"'},
+    )
