@@ -341,7 +341,7 @@ class BitacoraRequest(BaseModel):
     visitas: list[VisitaBitacora]
 
 @app.post("/api/generar-bitacora")
-async def generar_bitacora(datos: BitacoraRequest):  # ← quita "request: Request"
+async def generar_bitacora(datos: BitacoraRequest):
     AZUL_LANS      = colors.HexColor("#1565C0")
     AZUL_SUB       = colors.HexColor("#1E88E5")
     GRIS_FILA_PAR  = colors.HexColor("#F5F5F5")
@@ -382,7 +382,7 @@ async def generar_bitacora(datos: BitacoraRequest):  # ← quita "request: Reque
         if not url:
             return None
         try:
-            r = req_lib.get(url, timeout=5)
+            r = requests.get(url, timeout=5)
             return r.content if r.status_code == 200 else None
         except Exception:
             return None
